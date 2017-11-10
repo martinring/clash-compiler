@@ -16,6 +16,7 @@
 module Clash.Netlist.Util where
 
 import           Control.Error           (hush)
+import           Control.Exception       (throw)
 import           Control.Lens            ((.=),(%=))
 import qualified Control.Lens            as Lens
 import           Control.Monad           (zipWithM)
@@ -32,7 +33,8 @@ import           Unbound.Generics.LocallyNameless
 import qualified Unbound.Generics.LocallyNameless as Unbound
 
 import           Clash.Annotations.TopEntity (PortName (..), TopEntity (..))
-import           Clash.Driver.Types      (Manifest (..))
+import           Clash.Driver.Types
+  (ClashException (..), Manifest (..), SrcSpan)
 import           Clash.Core.DataCon      (DataCon (..))
 import           Clash.Core.FreeVars     (termFreeIds, typeFreeVars)
 import           Clash.Core.Name         (Name (..), appendToName, name2String)
@@ -83,18 +85,29 @@ splitNormalized tcm expr = do
 
 -- | Converts a Core type to a HWType given a function that translates certain
 -- builtin types. Errors if the Core type is not translatable.
-unsafeCoreTypeToHWType :: String
-                       -> (HashMap TyConOccName TyCon -> Type -> Maybe (Either String HWType))
-                       -> HashMap TyConOccName TyCon
-                       -> Type
-                       -> HWType
-unsafeCoreTypeToHWType loc builtInTranslation m = either (error . (loc ++)) id . coreTypeToHWType builtInTranslation m
+unsafeCoreTypeToHWType
+  :: SrcSpan
+  -> String
+  -> (HashMap TyConOccName TyCon -> Type -> Maybe (Either String HWType))
+  -> HashMap TyConOccName TyCon
+  -> Type
+  -> HWType
+unsafeCoreTypeToHWType sp loc builtInTranslation m =
+  either (\msg -> throw (ClashException sp (loc ++ msg) Nothing)) id .
+  coreTypeToHWType builtInTranslation m
 
 -- | Converts a Core type to a HWType within the NetlistMonad; errors on failure
-unsafeCoreTypeToHWTypeM :: String
-                        -> Type
-                        -> NetlistMonad HWType
-unsafeCoreTypeToHWTypeM loc ty = unsafeCoreTypeToHWType loc <$> Lens.use typeTranslator <*> Lens.use tcCache <*> pure ty
+unsafeCoreTypeToHWTypeM
+  :: String
+  -> Type
+  -> NetlistMonad HWType
+unsafeCoreTypeToHWTypeM loc ty =
+  unsafeCoreTypeToHWType
+    <$> (snd <$> Lens.use curCompNm)
+    <*> pure loc
+    <*> Lens.use typeTranslator
+    <*> Lens.use tcCache
+    <*> pure ty
 
 -- | Converts a Core type to a HWType within the NetlistMonad; 'Nothing' on failure
 coreTypeToHWTypeM :: Type
@@ -327,10 +340,11 @@ mkUniqueArguments (Just teM) args = do
     go pM var = do
       tcm       <- Lens.use tcCache
       typeTrans <- Lens.use typeTranslator
+      (_,sp)    <- Lens.use curCompNm
       let i    = varName var
           i'   = pack (name2String i)
           ty   = unembed (varType var)
-          hwty = unsafeCoreTypeToHWType $(curLoc) typeTrans tcm ty
+          hwty = unsafeCoreTypeToHWType sp $(curLoc) typeTrans tcm ty
       (ports,decls,_,pN) <- mkInput pM (i',hwty)
       return (ports,decls,(nameOcc i, Var ty (repName (unpack pN) i)))
 
@@ -346,10 +360,11 @@ mkUniqueResult Nothing res = do
 mkUniqueResult (Just teM) res = do
   tcm       <- Lens.use tcCache
   typeTrans <- Lens.use typeTranslator
+  (_,sp)    <- Lens.use curCompNm
   let o    = varName res
       o'   = pack (name2String o)
       ty   = unembed (varType res)
-      hwty = unsafeCoreTypeToHWType $(curLoc) typeTrans tcm ty
+      hwty = unsafeCoreTypeToHWType sp $(curLoc) typeTrans tcm ty
       oPortSupply = fmap t_output teM
   (ports,decls,pN) <- mkOutput oPortSupply (o',hwty)
   let pO = repName (unpack pN) o
@@ -359,11 +374,12 @@ idToPort :: Id -> NetlistMonad (Identifier,HWType)
 idToPort var = do
       tcm <- Lens.use tcCache
       typeTrans <- Lens.use typeTranslator
+      (_,sp) <- Lens.use curCompNm
       let i  = varName var
           ty = unembed (varType var)
       return
         ( pack $ name2String i
-        , unsafeCoreTypeToHWType $(curLoc) typeTrans tcm ty
+        , unsafeCoreTypeToHWType sp $(curLoc) typeTrans tcm ty
         )
 
 repName :: String -> Name a -> Name a
