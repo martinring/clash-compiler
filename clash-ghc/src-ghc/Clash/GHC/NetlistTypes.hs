@@ -95,6 +95,12 @@ ghcTypeToHWType iw floatSupport = go
 
         "GHC.Prim.Any" -> return (BitVector 1)
 
+        "Clash.Signal.SomeClock" ->
+          throwE $ $(curLoc) ++ "Unbound hidden clock, use `exposeClock`: " ++ showDoc ty
+
+        "Clash.Signal.SomeReset" ->
+          throwE $ $(curLoc) ++ "Unbound hidden reset, use `exposeReset`: " ++ showDoc ty
+
         "Clash.Signal.Internal.Signal" ->
           ExceptT $ return $ coreTypeToHWType go m (args !! 1)
 
