@@ -10,6 +10,11 @@ cabal clean
 cabal install
 cd ..
 
+cd clash-bv
+cabal clean
+cabal install
+cd ..
+
 cd clash-systemverilog
 cabal clean
 cabal install

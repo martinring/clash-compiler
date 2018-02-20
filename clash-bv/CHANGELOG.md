@@ -1,0 +1,1 @@
+# Changelog for the [`clash-bv`](http://hackage.haskell.org/package/clash-bv) package

@@ -13,6 +13,7 @@ import CLaSH.Backend
 import CLaSH.Backend.SystemVerilog
 import CLaSH.Backend.VHDL
 import CLaSH.Backend.Verilog
+import CLaSH.Backend.BV
 import CLaSH.Netlist.BlackBox.Types
 
 import Control.DeepSeq
@@ -29,6 +30,10 @@ genVHDL = doHDL (initBackend WORD_SIZE_IN_BITS HDLSYN :: VHDLState)
 genVerilog :: String
            -> IO ()
 genVerilog = doHDL (initBackend WORD_SIZE_IN_BITS HDLSYN :: VerilogState)
+
+genBV :: String
+           -> IO ()
+genBV = doHDL (initBackend WORD_SIZE_IN_BITS HDLSYN :: BVState)
 
 doHDL :: Backend s
        => s
