@@ -31,25 +31,25 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.lt#"
     , "type"      : "lt# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "~ARG[0] < ~ARG[1]"
+    , "templateE" : "(bv-lt ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.ge#"
     , "type"      : "ge# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "~ARG[0] >= ~ARG[1]"
+    , "templateE" : "(bv-ge ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.gt#"
     , "type"      : "gt# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "~ARG[0] > ~ARG[1]"
+    , "templateE" : "(bv-gt ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.le#"
     , "type"      : "le# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "~ARG[0] <= ~ARG[1]"
+    , "templateE" : "(bv-ge ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -67,19 +67,19 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.+#"
     , "type"      : "(+#) :: KnownNat n => Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[1] + ~ARG[2]"
+    , "templateE" : "(bv-add ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.-#"
     , "type"      : "(-#) :: KnownNat n => Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[1] - ~ARG[2]"
+    , "templateE" : "(bv-sub ~ARG[1] ~ARG[2]"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.*#"
     , "type"      : "(*#) :: KnownNat n => Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[1] * ~ARG[2]"
+    , "templateE" : "(bv-mul ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
@@ -115,7 +115,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.quot#"
     , "type"      : "quot# :: Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[0] / ~ARG[1]"
+    , "templateE" : "(bv-div ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -191,7 +191,12 @@ assign ~RESULT = ~SYM[0][~LIT[0]-1 : 0];
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.resize#"
     , "type"      : "resize# :: KnownNat m => Unsigned n -> Unsigned m"
-    , "templateD" : "assign ~RESULT = $unsigned(~ARG[1]);"
+    , "templateD" : 
+"$if(~SIZE[~TYPO] > ~SIZE[~TYP[1]])
+(assert (= ~RESULT (bv-zero-extend ~ARG[1] ~SIZE[~TYPO]))
+$else
+(assert (= ~RESULT (bv-extract $(~SIZE[~TYPO]-1) 0 ~ARG[1]))
+$endif"
     }
   }
 ]

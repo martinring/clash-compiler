@@ -24,6 +24,6 @@ cabal.config
 *.prof
 *.aux
 *.hp
-/bv
+/yices
 *~
 *.DS_Store

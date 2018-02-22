@@ -4,7 +4,7 @@ packages:
 - 'clash-prelude'
 - 'clash-lib'
 - 'clash-verilog'
-- 'clash-bv'
+- 'clash-yices'
 - 'clash-systemverilog'
 - 'clash-vhdl'
 - 'clash-ghc'

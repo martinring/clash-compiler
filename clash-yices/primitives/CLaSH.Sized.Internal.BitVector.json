@@ -13,31 +13,31 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.high"
     , "type"      : "high :: Bit"
-    , "templateE" : "1'b1"
+    , "templateE" : "true"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.low"
     , "type"      : "low :: Bit"
-    , "templateE" : "1'b0"
+    , "templateE" : "false"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.++#"
     , "type"      : "(++#) :: KnownNat m => BitVector n -> BitVector m -> BitVector (n + m)"
-    , "templateE" : "{~ARG[1],~ARG[2]}"
+    , "templateE" : "(bv-concat ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.reduceAnd#"
     , "type"      : "reduceAnd# :: KnownNat n => BitVector n -> BitVector 1"
-    , "templateE" : "& (~ARG[1])"
+    , "templateE" : "(bv-redand ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.reduceOr#"
     , "type"      : "reduceOr# :: BitVector n -> BitVector 1"
-    , "templateE" : "| (~ARG[0])"
+    , "templateE" : "(bv-redor ~ARG[0])"
     }
   }
 , { "BlackBox" :

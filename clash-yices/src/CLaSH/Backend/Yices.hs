@@ -14,9 +14,9 @@
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE ViewPatterns      #-}
 
-module CLaSH.Backend.BV (BVState) where
+module CLaSH.Backend.Yices (YicesState) where
 
-import qualified Control.Applicative                  as A
+--import qualified Control.Applicative                  as A
 import           Control.Lens                         ((+=),(-=),(.=),(%=), makeLenses, use)
 import           Control.Monad.State                  (State)
 import           Data.Hashable                        (Hashable (..))
@@ -39,14 +39,14 @@ import           CLaSH.Netlist.Util                   hiding (mkBasicId)
 import           CLaSH.Util                           (curLoc, (<:>))
 
 #ifdef CABAL
-import qualified Paths_clash_bv
+import qualified Paths_clash_yices
 #else
 import qualified System.FilePath
 #endif
 
--- | State for the 'CLaSH.Backend.Verilog.BVM' monad:
-data BVState =
-  BVState
+-- | State for the 'CLaSH.Backend.Verilog.YicesM' monad:
+data YicesState =
+  YicesState
     { _genDepth  :: Int -- ^ Depth of current generative block
     , _idSeen    :: [Identifier]
     , _srcSpan   :: SrcSpan
@@ -55,25 +55,25 @@ data BVState =
     , _hdlsyn    :: HdlSyn
     }
 
-makeLenses ''BVState
+makeLenses ''YicesState
 
-instance Backend BVState where
-  initBackend     = BVState 0 [] noSrcSpan []
-  hdlKind         = const BV
+instance Backend YicesState where
+  initBackend     = YicesState 0 [] noSrcSpan []
+  hdlKind         = const Yices
 #ifdef CABAL
-  primDir         = const (Paths_clash_bv.getDataFileName "primitives")
+  primDir         = const (Paths_clash_yices.getDataFileName "primitives")
 #else
-  primDir _       = return ("clash-bv" System.FilePath.</> "primitives")
+  primDir _       = return ("clash-yices" System.FilePath.</> "primitives")
 #endif
   extractTypes    = const HashSet.empty
-  name            = const "bv"
+  name            = const "yices"
   extension       = const ".ys"
 
-  genHDL          = const genBV
+  genHDL          = const genYices
   mkTyPackage _ _ = return []
-  hdlType         = bvType
-  hdlTypeErrValue = bvTypeErrValue
-  hdlTypeMark     = bvTypeMark
+  hdlType         = yicesType
+  hdlTypeErrValue = yicesTypeErrValue
+  hdlTypeMark     = yicesTypeMark
   hdlSig t ty     = sigDecl (text t) ty
   genStmt True    = do cnt <- use genDepth
                        genDepth += 1
@@ -85,7 +85,7 @@ instance Backend BVState where
                        if cnt > 0
                           then empty
                           else "endgenerate"
-  inst            = inst_
+  inst            = inst__
   expr            = expr_
   iwWidth         = use intWidth
   toBV _          = text
@@ -96,7 +96,7 @@ instance Backend BVState where
   setSrcSpan      = (srcSpan .=)
   getSrcSpan      = use srcSpan
 
-type BVM a = State BVState a
+type YicesM a = State YicesState a
 
 -- List of reserved Yices keywords
 reservedWords :: [Identifier]
@@ -122,25 +122,29 @@ filterReserved s = if s `elem` reservedWords
   then s `Text.append` "_r"
   else s
 
--- | Generate VHDL for a Netlist component
-genBV :: SrcSpan -> Component -> BVM ((String,Doc),[(String,Doc)])
-genBV sp c = do
+-- | Generate Yices for a Netlist component
+genYices :: SrcSpan -> Component -> YicesM ((String,Doc),[(String,Doc)])
+genYices sp c = do
     setSrcSpan sp
-    v    <- verilog
+    v    <- yices
     incs <- use includes
     return ((unpack cName,v),incs)
   where
     cName   = componentName c
-    verilog = "; Automatically generated Yices Bitvector Logic" <$$>
-              module_ c
+    yices = "; Automatically generated Yices Bitvector Logic" <$$>
+            module_ c
 
-module_ :: Component -> BVM Doc
+module_ :: Component -> YicesM Doc
 module_ c = do
     { addSeen c
     ; m <- "; module" <+> text (componentName c) {- <> tupled ports <> semi -} <$>
+           "; input" <$> 
            inputPorts <$> 
+           "; output" <$>
            outputPorts <$$> 
-           decls (declarations c) <$$> 
+           "; wires" <$>
+           decls (declarations c) <$>
+           "; netlist" <$>
            insts (declarations c) <$>
            "; endmodule"
     ; idSeen .= []
@@ -154,13 +158,13 @@ module_ c = do
 
     inputPorts = case (inputs c ++ hiddenPorts c) of
                    [] -> empty
-                   p  -> vcat (punctuate semi (sequence [ "input" <+> sigDecl (text i) ty | (i,ty) <- p ])) <> semi
+                   p  -> vcat (punctuate semi (sequence [ parens ("define" <+> sigDecl (text i) ty) | (i,ty) <- p ])) <> semi
 
     outputPorts = case (outputs c) of
                    [] -> empty
-                   p  -> vcat (punctuate semi (sequence [ "output" <+> sigDecl (text i) ty | (i,ty) <- p ])) <> semi
+                   p  -> vcat (punctuate semi (sequence [ parens ("define" <+> sigDecl (text i) ty) | (i,ty) <- p ])) <> semi
 
-addSeen :: Component -> BVM ()
+addSeen :: Component -> YicesM ()
 addSeen c = do
   let iport = map fst $ inputs c
       hport = map fst $ hiddenPorts c
@@ -168,7 +172,7 @@ addSeen c = do
       nets  = mapMaybe (\case {NetDecl i _ -> Just i; _ -> Nothing}) $ declarations c
   idSeen .= concat [iport,hport,oport,nets]
 
-mkUniqueId :: Identifier -> BVM Identifier
+mkUniqueId :: Identifier -> YicesM Identifier
 mkUniqueId i = do
   mkId <- mkBasicId
   seen <- use idSeen
@@ -179,7 +183,7 @@ mkUniqueId i = do
                 return i'
   where
     go :: (Identifier -> Identifier) -> [Identifier] -> Identifier
-       -> Int -> BVM Identifier
+       -> Int -> YicesM Identifier
     go mkId seen i' n = do
       let i'' = mkId (Text.append i' (Text.pack ('_':show n)))
       case i'' `elem` seen of
@@ -187,49 +191,55 @@ mkUniqueId i = do
         False -> do idSeen %= (i'':)
                     return i''
 
-bvType :: HWType -> BVM Doc
-bvType t = case t of
-  Signed n -> "signed" <+> brackets (int (n-1) <> colon <> int 0)
+yicesType :: HWType -> YicesM Doc
+yicesType t = case t of
+  Signed n -> parens ("bitvector" <+> int n)
   Clock {} -> empty
   Reset {} -> empty
-  _        -> brackets (int (typeSize t -1) <> colon <> int 0)
+  Bool     -> "bool"
+  _        -> parens ("bitvector" <+> int (typeSize t))
 
-sigDecl :: BVM Doc -> HWType -> BVM Doc
-sigDecl d t = bvType t <+> d
+sigDecl :: YicesM Doc -> HWType -> YicesM Doc
+sigDecl d t = d <+> "::" <+> yicesType t
 
 -- | Convert a Netlist HWType to the root of a Verilog type
-bvTypeMark :: HWType -> BVM Doc
-bvTypeMark = const empty
+yicesTypeMark :: HWType -> YicesM Doc
+yicesTypeMark = const empty
 
--- | Convert a Netlist HWType to an error VHDL value for that type
-bvTypeErrValue :: HWType -> BVM Doc
-bvTypeErrValue ty = braces (int (typeSize ty) <+> braces "1'bx")
+-- | Convert a Netlist HWType to an error Yices value for that type
+yicesTypeErrValue :: HWType -> YicesM Doc
+yicesTypeErrValue ty = braces (int (typeSize ty) <+> braces "1'bx")
 
-decls :: [Declaration] -> BVM Doc
+decls :: [Declaration] -> YicesM Doc
 decls [] = empty
 decls ds = do
-    dsDoc <- catMaybes A.<$> mapM decl ds
+    dsDoc <- fmap catMaybes $ mapM decl ds
     case dsDoc of
       [] -> empty
-      _  -> punctuate' semi (A.pure dsDoc)
+      _  -> punctuate' semi (return dsDoc)
 
-decl :: Declaration -> BVM (Maybe Doc)
-decl (NetDecl id_ ty) = Just A.<$> "wire" <+> sigDecl (text id_) ty
+decl :: Declaration -> YicesM (Maybe Doc)
+decl (NetDecl id_ ty) = fmap Just $ parens $ "define" <+> sigDecl (text id_) ty
 
 decl _ = return Nothing
 
-insts :: [Declaration] -> BVM Doc
+insts :: [Declaration] -> YicesM Doc
 insts [] = empty
-insts is = indent 2 . vcat . punctuate linebreak . fmap catMaybes $ mapM inst_ is
+insts is = vcat . punctuate semi . fmap catMaybes $ mapM inst__ is
+
+inst__ :: Declaration
+       -> YicesM (Maybe Doc)
+inst__ e = {-fmap (semi <+> (text $ pack $ show e) <$>) $ -} inst_ e
 
 -- | Turn a Netlist Declaration to a SystemVerilog concurrent block
-inst_ :: Declaration -> BVM (Maybe Doc)
+inst_ :: Declaration -> YicesM (Maybe Doc)
 inst_ (Assignment id_ e) = fmap Just $
-  "assign" <+> text id_ <+> equals <+> expr_ False e <> semi
+  parens $ "assert" <+> parens (equals <+> align (text id_ </> expr_ False e))
 
-inst_ (CondAssignment id_ ty scrut _ [(Just (BoolLit b), l),(_,r)]) = fmap Just $ do
-    { regId <- mkUniqueId (Text.append id_ "_reg")
-    ; "reg" <+> bvType ty <+> text regId <> semi <$>
+inst_ (CondAssignment id_ _ scrut _ [(Just (BoolLit b), l),(_,r)]) = fmap Just $ do
+  parens $ "assert" <+> parens (equals <+> align (text id_ </> parens ("ite" <+> align (expr_ False scrut <$> expr_ False t <$> expr_ False f))))
+    {-{ regId <- mkUniqueId (Text.append id_ "_reg")
+    ; "reg" <+> yicesType ty <+> text regId <> semi <$>
       "always @(*) begin" <$>
       indent 2 ("if" <> parens (expr_ True scrut) <$>
                   (indent 2 $ text regId <+> equals <+> expr_ False t <> semi) <$>
@@ -237,14 +247,14 @@ inst_ (CondAssignment id_ ty scrut _ [(Just (BoolLit b), l),(_,r)]) = fmap Just 
                   (indent 2 $ text regId <+> equals <+> expr_ False f <> semi)) <$>
       "end" <$>
       "assign" <+> text id_ <+> equals <+> text regId <> semi
-    }
+    }-}
   where
     (t,f) = if b then (l,r) else (r,l)
 
 
 inst_ (CondAssignment id_ ty scrut scrutTy es) = fmap Just $ do
     { regId <- mkUniqueId (Text.append id_ "_reg")
-    ; "reg" <+> bvType ty <+> text regId <> semi <$>
+    ; "reg" <+> yicesType ty <+> text regId <> semi <$>
       "always @(*) begin" <$>
       indent 2 ("case" <> parens (expr_ True scrut) <$>
                   (indent 2 $ vcat $ punctuate semi (conds regId es)) <> semi <$>
@@ -253,7 +263,7 @@ inst_ (CondAssignment id_ ty scrut scrutTy es) = fmap Just $ do
       "assign" <+> text id_ <+> equals <+> text regId <> semi
     }
   where
-    conds :: Identifier -> [(Maybe Literal,Expr)] -> BVM [Doc]
+    conds :: Identifier -> [(Maybe Literal,Expr)] -> YicesM [Doc]
     conds _ []                = return []
     conds i [(_,e)]           = ("default" <+> colon <+> text i <+> equals <+> expr_ False e) <:> return []
     conds i ((Nothing,e):_)   = ("default" <+> colon <+> text i <+> equals <+> expr_ False e) <:> return []
@@ -285,7 +295,7 @@ inst_ (NetDecl _ _) = return Nothing
 -- | Turn a Netlist expression into a SystemVerilog expression
 expr_ :: Bool -- ^ Enclose in parenthesis?
       -> Expr -- ^ Expr to convert
-      -> BVM Doc
+      -> YicesM Doc
 expr_ _ (Literal sizeM lit) = exprLit sizeM lit
 
 expr_ _ (Identifier id_ Nothing) = text id_
@@ -301,7 +311,10 @@ expr_ _ (Identifier id_ (Just (Indexed (ty@(SP _ args),dcI,fI)))) =
     end      = start - argSize + 1
 
 expr_ _ (Identifier id_ (Just (Indexed (ty@(Product _ argTys),_,fI)))) =
-    text id_ <> brackets (int start <> colon <> int end)
+    parens $ 
+      case argTy of
+        Bool -> "bit" <+> text id_ <+> int start
+        _    -> "bv-extract" <+> int start <+> int end <+> text id_
   where
     argTy   = argTys !! fI
     argSize = typeSize argTy
@@ -364,19 +377,19 @@ expr_ _ (Identifier id_ (Just _))                      = text id_
 
 expr_ b (DataCon _ (DC (Void, -1)) [e]) = expr_ b e
 
-expr_ _ (DataCon ty@(Vector 0 _) _ _) = bvTypeErrValue ty
+expr_ _ (DataCon ty@(Vector 0 _) _ _) = yicesTypeErrValue ty
 
 expr_ _ (DataCon (Vector 1 _) _ [e]) = expr_ False e
 expr_ _ e@(DataCon (Vector _ _) _ es@[_,_]) =
   case vectorChain e of
-    Just es' -> listBraces (mapM (expr_ False) es')
-    Nothing  -> listBraces (mapM (expr_ False) es)
+    Just es' -> bvConcat (mapM (expr_ False) es')
+    Nothing  -> bvConcat (mapM (expr_ False) es)
 
 expr_ _ (DataCon (RTree 0 _) _ [e]) = expr_ False e
 expr_ _ e@(DataCon (RTree _ _) _ es@[_,_]) =
   case rtreeChain e of
-    Just es' -> listBraces (mapM (expr_ False) es')
-    Nothing  -> listBraces (mapM (expr_ False) es)
+    Just es' -> bvConcat (mapM (expr_ False) es')
+    Nothing  -> bvConcat (mapM (expr_ False) es)
 
 expr_ _ (DataCon ty@(SP _ args) (DC (_,i)) es) = assignExpr
   where
@@ -386,12 +399,16 @@ expr_ _ (DataCon ty@(SP _ args) (DC (_,i)) es) = assignExpr
     argExprs   = map (expr_ False) es
     extraArg   = case typeSize ty - dcSize of
                    0 -> []
-                   n -> [int n <> "'b" <> bits (replicate n U)]
-    assignExpr = braces (hcat $ punctuate comma $ sequence (dcExpr:argExprs ++ extraArg))
+                   n -> ["0b" <> bits (replicate n U)]
+    assignExpr = parens $ "bv-concat" <+> (hcat $ punctuate space $ sequence (dcExpr:argExprs ++ extraArg))
 
 expr_ _ (DataCon ty@(Sum _ _) (DC (_,i)) []) = int (typeSize ty) <> "'d" <> int i
 
-expr_ _ (DataCon (Product _ _) _ es) = listBraces (mapM (expr_ False) es)
+expr_ _ (DataCon (Product _ tys) _ es) = bvConcat $ mapM z (zip tys es)  
+  where z (Bool,e) = parens $ "bool-to-bv" <+> expr_ False e
+        z (_,e) = expr_ False e
+
+
 
 expr_ _ (BlackBoxE pNm _ _ _ _ bbCtx _)
   | pNm == "CLaSH.Sized.Internal.Signed.fromInteger#"
@@ -432,7 +449,7 @@ expr_ b (BlackBoxE _ _ _ (Just (nm,inc)) bs bbCtx b') = do
 expr_ _ (DataTag Bool (Left id_))          = text id_ <> brackets (int 0)
 expr_ _ (DataTag Bool (Right id_))         = do
   iw <- use intWidth
-  "$unsigned" <> parens (listBraces (sequence [braces (int (iw-1) <+> braces "1'b0"),text id_]))
+  "$unsigned" <> parens (bvConcat (sequence [braces (int (iw-1) <+> braces "0b0"),text id_]))
 
 expr_ _ (DataTag (Sum _ _) (Left id_))     = "$unsigned" <> parens (text id_)
 expr_ _ (DataTag (Sum _ _) (Right id_))    = "$unsigned" <> parens (text id_)
@@ -480,20 +497,21 @@ rtreeChain (DataCon (RTree 0 _) _ [e])     = Just [e]
 rtreeChain (DataCon (RTree _ _) _ [e1,e2]) = Just e1 <:> rtreeChain e2
 rtreeChain _                               = Nothing
 
-exprLit :: Maybe (HWType,Size) -> Literal -> BVM Doc
+exprLit :: Maybe (HWType,Size) -> Literal -> YicesM Doc
 exprLit Nothing (NumLit i) = integer i
 
 exprLit (Just (hty,sz)) (NumLit i) = case hty of
-  Unsigned _ -> int sz <> "'d" <> integer i
+  Unsigned _ -> bvlit
   Index _ -> int (typeSize hty) <> "'d" <> integer i
   Signed _
-   | i < 0     -> "-" <> int sz <> "'sd" <> integer (abs i)
-   | otherwise -> int sz <> "'sd" <> integer i
-  _ -> int sz <> "'b" <> blit
+   | i < 0     -> parens $ "bv-neg" <+> bvlit
+   | otherwise -> bvlit
+  _ -> "0b" <> blit
   where
+    bvlit = parens $ "mk-bv" <+> int sz <+> integer (abs i)
     blit = bits (toBits sz i)
-exprLit _             (BoolLit t)   = if t then "1'b1" else "1'b0"
-exprLit _             (BitLit b)    = "1'b" <> bit_char b
+exprLit _             (BoolLit t)   = if t then "true" else "false"
+exprLit _             (BitLit b)    = "0b" <> bit_char b
 exprLit _             (StringLit s) = text . pack $ show s
 exprLit _             l             = error $ $(curLoc) ++ "exprLit: " ++ show l
 
@@ -504,10 +522,10 @@ toBits size val = map (\x -> if odd x then H else L)
                 $ map (`mod` 2)
                 $ iterate (`div` 2) val
 
-bits :: [Bit] -> BVM Doc
+bits :: [Bit] -> YicesM Doc
 bits = hcat . mapM bit_char
 
-bit_char :: Bit -> BVM Doc
+bit_char :: Bit -> YicesM Doc
 bit_char H = char '1'
 bit_char L = char '0'
 bit_char U = char 'x'
@@ -516,8 +534,8 @@ bit_char Z = char 'z'
 dcToExpr :: HWType -> Int -> Expr
 dcToExpr ty i = Literal (Just (ty,conSize ty)) (NumLit (toInteger i))
 
-listBraces :: Monad m => m [Doc] -> m Doc
-listBraces = encloseSep lbrace rbrace comma
+bvConcat :: YicesM [Doc] -> YicesM Doc
+bvConcat = parens . ("bv-concat" <+>) . align . vsep
 
 parenIf :: Monad m => Bool -> m Doc -> m Doc
 parenIf True  = parens
@@ -527,7 +545,7 @@ punctuate' :: Monad m => m Doc -> m [Doc] -> m Doc
 punctuate' s d = vcat (punctuate s d) <> s
 
 
-{-encodingNote :: HWType -> BVM Doc
+{-encodingNote :: HWType -> YicesM Doc
 encodingNote (Clock _ _) = "// clock"
 encodingNote (Reset _ _) = "// asynchronous reset: active low"
 encodingNote _           = empty-}

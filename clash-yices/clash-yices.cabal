@@ -1,4 +1,4 @@
-Name:                 clash-bv
+Name:                 clash-yices
 Version:              0.7.2
 Synopsis:             CAES Language for Synchronous Hardware - Bitvector Logic backend
 Description:
@@ -112,6 +112,6 @@ Library
                       unordered-containers    >= 0.2.3.3  && < 0.3,
                       wl-pprint-text          >= 1.1.0.0  && < 1.2
 
-  Exposed-modules:    CLaSH.Backend.BV
+  Exposed-modules:    CLaSH.Backend.Yices
 
   other-modules:      Paths_clash_bv
