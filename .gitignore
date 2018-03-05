@@ -27,3 +27,5 @@ cabal.config
 /yices
 *~
 *.DS_Store
+/vhdl
+/verilog

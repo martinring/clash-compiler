@@ -91,7 +91,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.fromInteger#"
     , "type"      : "fromInteger# :: KnownNat n => Integer -> Unsigned n"
-    , "templateE" : "$unsigned(~ARG[1])"
+    , "templateE" : "~LIT[1]"
     }
   }
 , { "BlackBox" :
@@ -191,12 +191,7 @@ assign ~RESULT = ~SYM[0][~LIT[0]-1 : 0];
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.resize#"
     , "type"      : "resize# :: KnownNat m => Unsigned n -> Unsigned m"
-    , "templateD" : 
-"$if(~SIZE[~TYPO] > ~SIZE[~TYP[1]])
-(assert (= ~RESULT (bv-zero-extend ~ARG[1] ~SIZE[~TYPO]))
-$else
-(assert (= ~RESULT (bv-extract $(~SIZE[~TYPO]-1) 0 ~ARG[1]))
-$endif"
+    , "templateE" : "$if(~SIZE[~TYPO] > ~SIZE[~TYP[1]]) (bv-zero-extend ~ARG[1] ~SIZE[~TYPO]) $else (bv-extract $(~SIZE[~TYPO]-1) 0 ~ARG[1]) $endif"
     }
   }
 ]
