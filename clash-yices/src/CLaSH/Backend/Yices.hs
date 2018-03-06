@@ -20,7 +20,7 @@ import           Control.Monad
 import           Control.Monad.State                  (State)
 
 import           Data.List                            (intersect,partition)
-import           Data.Maybe                           (catMaybes)
+import           Data.Maybe                           (catMaybes,isNothing)
 import           Data.HashSet                         (HashSet)
 import qualified Data.HashSet                         as HashSet
 import           Data.Text.Lazy                       (Text)
@@ -171,60 +171,67 @@ genYices nm sp c = do
   return ((Text.unpack cname,text),[])
 
 yicesType :: HWType -> YicesM Doc
-yicesType Void = "<void>"
-yicesType String = "<string>"
 yicesType Bool = "bool"
 yicesType (BitVector sz) = apply "bitvector" $ int sz
-yicesType (Index _) = "<index>"
-yicesType (Signed sz) = apply "bitvector" $ int sz
-yicesType (Unsigned sz) = apply "bitvector" $ int sz
-yicesType (Vector sz ty) = undefined
-yicesType (RTree sz ty) = undefined
-yicesType s@(Sum name constructors) = do
-  typesSeen %= HashSet.insert s
-  text name
 yicesType p@(Product name tys)
   | Text.isPrefixOf "GHC.Tuple" name = applyN "tuple" $ mapM yicesType tys
-  | otherwise = do
-      typesSeen %= HashSet.insert p
-      text name
-yicesType (SP name cs) = undefined
-yicesType (Clock name period) = "<clock>"
-yicesType (Reset name period) = "<reset>"
+yicesType other = do
+  typesSeen %= HashSet.insert other
+  yicesTypeName other
+
+yicesTypeName :: HWType -> YicesM Doc 
+yicesTypeName Void = "Void"
+yicesTypeName String = "String"
+yicesTypeName Bool = "Bool"
+yicesTypeName (BitVector sz) = "BitVector" <> brackets (int sz)
+yicesTypeName (Index n) = "Index" <> brackets (int 0 <> ".." <> integer n)
+yicesTypeName (Signed sz) = "Signed" <> brackets (int sz)
+yicesTypeName (Unsigned sz) = "Unsigned" <> brackets (int sz)
+yicesTypeName (Vector sz ty) = "Vector" <> brackets (int sz) <> angles (yicesTypeName ty)
+yicesTypeName (RTree sz ty) = "RTree" <> brackets (int sz) <> angles (yicesTypeName ty)
+yicesTypeName (Sum name _) = text name
+yicesTypeName (Product name _) = text name
+yicesTypeName (SP name cs) = text name
+yicesTypeName (Clock name _) = "Clock_" <> text name
+yicesTypeName (Reset name _) = "Reset_" <> text name
 
 yicesTypeDef :: HWType -> YicesM Doc
-yicesTypeDef (Sum name constructors) =
-  applyN "define-type" $ do
-    name <- text name
-    def <- applyN "scalar" $ mapM text constructors
-    return [name,def]
-yicesTypeDef (Product name tys) =
-  applyN "define-type" $ do
-    name <- text name
-    def <- applyN "tuple" $ mapM yicesType tys
-    return [name,def]
-yicesTypeDef _ = "def"
-
-sortTypes :: [HWType] -> [HWType]
-sortTypes tys
-  | length tys < 2 = tys
-  | otherwise = ok ++ sortTypes rs
-    where (ok,rs) = partition (null . intersect tys . nestedTypes) tys
+yicesTypeDef Void = "<na>"
+yicesTypeDef String = "<na>"
+yicesTypeDef Bool = "bool"
+yicesTypeDef (BitVector sz) = apply "bitvector" $ int sz
+yicesTypeDef (Index n) = "Index" <> brackets (int 0 <> ".." <> integer n)
+yicesTypeDef (Signed sz) = apply "bitvector" $ int sz
+yicesTypeDef (Unsigned sz) = apply "bitvector" $ int sz
+yicesTypeDef (Vector sz ty) = applyN "tuple" $ replicateM sz (yicesTypeDef ty) 
+yicesTypeDef (RTree sz ty) = "RTree" <> brackets (int sz) <> angles (yicesTypeDef ty)
+yicesTypeDef (Sum _ constructors) = applyN "scalar" $ mapM text constructors    
+yicesTypeDef (Product _ tys) = applyN "tuple" $ mapM yicesType tys 
+yicesTypeDef (SP name cs) = text name
+yicesTypeDef (Clock name _) = "<na>"
+yicesTypeDef (Reset name _) = "<na>"
 
 yicesTypesPackage :: String -> [HWType] -> YicesM [(String, Doc)]
 yicesTypesPackage name tys = do
-  x <- vsep $ mapM yicesTypeDef (sortTypes tys)
-  return [(name ++ "_types",x)]
+    x <- vsep $ mapM defineType (sortTypes tys)
+    return [(name ++ "_types",x)]
+  where    
+    sortTypes tys
+      | length tys < 2 = tys
+      | otherwise = ok ++ sortTypes rs
+        where (ok,rs) = partition (null . intersect tys . nestedTypes) tys
+    defineType ty = apply2 "define-type" (yicesTypeName ty) (yicesTypeDef ty)
 
 yicesSig :: Text -> HWType -> YicesM Doc
 yicesSig name ty = text name <+> dcolon <+> yicesType ty
 
 yicesExpr :: Expr -> YicesM Doc
+yicesExpr (Literal Nothing (BoolLit b)) = text $ if b then "true" else "false"
 yicesExpr (Literal (Just (ty,sz)) lit) = yicesLiteral ty lit
 yicesExpr (DataCon _ (DC (Sum _ cs,i)) []) = text $ cs !! fromIntegral i
 yicesExpr (DataCon t mod exprs) = applyN "mk-tuple" $ mapM yicesExpr exprs
 yicesExpr (Identifier i Nothing) = text i
-yicesExpr (Identifier i (Just (Indexed (Product name tys,x,n)))) = apply "select" $ text i <+> int (n + 1)
+yicesExpr (Identifier i (Just (Indexed (Product name tys,x,n)))) = apply2 "select" (text i) (int (n + 1))
 yicesExpr (Identifier i (Just (DC _))) = text i
 yicesExpr (Identifier i mod) = text i <+> text (Text.pack (show mod))
 yicesExpr (BlackBoxE pNm _ _ _ _ bbCtx _)
@@ -239,22 +246,43 @@ yicesExpr x = text (Text.pack (show x))
 yicesLiteral :: HWType -> Literal -> YicesM Doc
 yicesLiteral (s@(Sum name constructors)) (NumLit i) =
   text $ constructors !! fromInteger i
-yicesLiteral (Unsigned sz) (NumLit i) = apply "mk-bv" $ int sz <+> int (fromInteger i)
+yicesLiteral (Unsigned sz) (NumLit i) = apply2 "mk-bv" (int sz) (int (fromInteger i))
 yicesLiteral ty (NumLit i)    = text $ Text.pack $ show i
 yicesLiteral ty (BitLit b)    = text $ Text.pack $ show b
 yicesLiteral ty (BoolLit b)   = if b then "true" else "false"
 yicesLiteral ty (VecLit lits) = undefined
 yicesLiteral ty (StringLit s) = undefined
 
+conjunction :: YicesM [Doc] -> YicesM Doc
+conjunction = (>>= conj)
+  where conj [] = "true" 
+        conj [x] = return x
+        conj xs = applyN "and" (return xs)
+
+yicesEquality :: HWType -> YicesM Doc -> YicesM Doc -> YicesM Doc
+yicesEquality (Product _ tys) l r = 
+  applyN "and" $ forM (zip tys [1..]) $ \(ty,i) ->
+    yicesEquality ty (apply2 "select" l (int i)) (apply2 "select" r (int i))
+yicesEquality _ l r = apply2 "=" l r
+
 yicesInst :: Declaration -> YicesM (Maybe Doc)
+yicesInst (NetDecl _ _) = return Nothing
 yicesInst (Assignment i e) =
-  fmap Just $ apply "assert" $ apply "=" $ text i <+> yicesExpr e
-yicesInst (CondAssignment i t e t2 cases) = fmap Just $ vsep $ mapM buildCase cases
-  where buildCase (Just lit,e2) = do
-          let l = apply "=" $ yicesExpr e <+> yicesLiteral t2 lit
-          let r = apply "=" $ text i <+> yicesExpr e2
-          apply "assert" $ apply "=>" $ l <+> r
-yicesInst _ = return Nothing
+  fmap Just $ apply "assert" $ apply2 "=" (text i) (yicesExpr e)
+yicesInst (CondAssignment i t e t2 cases) = do
+    orElse <- yicesExpr defaultCase
+    fmap Just $ apply "assert" $ apply2 "=" (text i) $ 
+      foldM buildCase orElse otherCases
+  where 
+    (defaultCase,otherCases) = case partition (isNothing . fst) cases of
+      ([],other) -> (snd $ last other, init other)
+      ([d],other) -> (snd d, other)
+      _ -> error "there should be at most one default case"
+    buildCase el (Just lit,e2) = do
+      l <- apply2 "=" (yicesExpr e) (yicesLiteral t2 lit)
+      r <- yicesExpr e2
+      applyN "ite" (return [l,r,el])      
+yicesInst other = fmap Just $ text $ Text.pack $ show other
 
 definitions :: Component -> YicesM Doc
 definitions c =
@@ -288,10 +316,16 @@ dcolon :: YicesM Doc
 dcolon = colon <> colon
 
 apply :: Text -> YicesM Doc -> YicesM Doc
-apply fname arg = parens $ text fname <+> arg
+apply fname arg = applyN fname $ fmap (:[]) arg
+
+apply2 :: Text -> YicesM Doc -> YicesM Doc -> YicesM Doc
+apply2 fname arg1 arg2 = applyN fname $ do
+  a1 <- arg1
+  a2 <- arg2
+  return [a1,a2]
 
 applyN :: Text -> YicesM [Doc] -> YicesM Doc
 applyN fname args = parens $ text fname <+> align (sep args)
 
-comment :: Text -> YicesM Doc
-comment = (<+>) semi . text
+comment :: YicesM Doc -> YicesM Doc
+comment = (<+>) semi
