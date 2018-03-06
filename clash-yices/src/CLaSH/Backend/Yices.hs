@@ -23,6 +23,7 @@ import           Data.List                            (intersect,partition)
 import           Data.Maybe                           (catMaybes,isNothing)
 import           Data.HashSet                         (HashSet)
 import qualified Data.HashSet                         as HashSet
+import qualified Data.IntMap                          as IntMap
 import           Data.Text.Lazy                       (Text)
 import qualified Data.Text.Lazy                       as Text
 
@@ -281,7 +282,21 @@ yicesInst (CondAssignment i t e t2 cases) = do
     buildCase el (Just lit,e2) = do
       l <- apply2 "=" (yicesExpr e) (yicesLiteral t2 lit)
       r <- yicesExpr e2
-      applyN "ite" (return [l,r,el])      
+      applyN "ite" (return [l,r,el])
+yicesInst (BlackBoxD nm _ _ _ _ ctx)
+  | nm == "CLaSH.Sized.Vector.zipWith" = fmap Just $ do
+      let f = (bbFunctions ctx) IntMap.! 0
+      let (ae,at,_) = (bbInputs ctx) !! 1
+      let (be,bt,_) = (bbInputs ctx) !! 2
+      "zipWith" <$> indent 2 (
+          (text $ Text.pack $ show f) <$> 
+          (text $ Text.pack $ show ae) <$> 
+          (text $ Text.pack $ show be)
+        )
+  | otherwise =
+      fmap Just $
+        text (Text.fromStrict nm) <$> 
+          indent 2 (text $ Text.pack (show ctx))
 yicesInst other = fmap Just $ text $ Text.pack $ show other
 
 definitions :: Component -> YicesM Doc
@@ -311,6 +326,9 @@ nestedTypes (SP _ xs) = concatMap snd xs
 nestedTypes _ = []
 
 ---
+
+mshow :: Show a => a -> YicesM Doc
+mshow = text . Text.pack . show
 
 dcolon :: YicesM Doc
 dcolon = colon <> colon
