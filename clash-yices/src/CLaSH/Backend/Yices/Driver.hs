@@ -30,7 +30,7 @@ import qualified System.Directory                 as Directory
 import           System.FilePath                  ((</>), (<.>))
 import qualified System.FilePath                  as FilePath
 import qualified System.IO                        as IO
-import           Text.PrettyPrint.Leijen.Text     (Doc, hPutDoc)
+import           Text.PrettyPrint.Leijen.Text     (Doc, displayIO, renderPretty)
 import           Unbound.Generics.LocallyNameless (name2String)
 
 import           GHC.Extra                        ()
@@ -151,8 +151,8 @@ parsePrimitive (BlackBox pNm libM imps inc templT) =
 parsePrimitive (Primitive pNm typ) = Primitive pNm typ
 
 
-sortComponents :: [(SrcSpan,Component)] -> [(SrcSpan,Component)] 
-sortComponents cs 
+sortComponents :: [(SrcSpan,Component)] -> [(SrcSpan,Component)]
+sortComponents cs
   | length cs < 2 = cs
   | otherwise = ok ++ sortComponents rs
     where cs' = map (componentName . snd) cs
@@ -160,12 +160,12 @@ sortComponents cs
 
 nestedComponents :: Component -> [Text]
 nestedComponents c = insts ++ bb
-  where 
+  where
     insts = do
       decl <- declarations c
-      case decl of 
+      case decl of
         InstDecl name _ _ -> [name]
-        _ -> []    
+        _ -> []
     bb = do
       decl <- declarations c
       case decl of
@@ -217,7 +217,7 @@ prepareDir cleanhdl ext dir = do
 writeHDL :: FilePath -> (String, Doc) -> IO ()
 writeHDL dir (cname, hdl) = do
   handle <- IO.openFile (dir </> cname) IO.WriteMode
-  hPutDoc handle hdl
+  displayIO handle (renderPretty 0.4 150 hdl)
   IO.hPutStr handle "\n"
   IO.hClose handle
 

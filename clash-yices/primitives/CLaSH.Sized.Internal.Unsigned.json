@@ -31,25 +31,25 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.lt#"
     , "type"      : "lt# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "(bv-lt ~ARG[0] ~ARG[1])"
+    , "templateE" : "(bool-to-bv (bv-lt ~ARG[0] ~ARG[1]))"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.ge#"
     , "type"      : "ge# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "(bv-ge ~ARG[0] ~ARG[1])"
+    , "templateE" : "(bool-to-bv (bv-ge ~ARG[0] ~ARG[1]))"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.gt#"
     , "type"      : "gt# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "(bv-gt ~ARG[0] ~ARG[1])"
+    , "templateE" : "(bool-to-bv (bv-gt ~ARG[0] ~ARG[1]))"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.le#"
     , "type"      : "le# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "(bv-ge ~ARG[0] ~ARG[1])"
+    , "templateE" : "(bool-to-bv (bv-ge ~ARG[0] ~ARG[1]))"
     }
   }
 , { "BlackBox" :
