@@ -14,6 +14,7 @@ import CLaSH.Backend.SystemVerilog
 import CLaSH.Backend.VHDL
 import CLaSH.Backend.Verilog
 import CLaSH.Backend.Yices
+import CLaSH.Backend.Yices.Driver
 import CLaSH.Netlist.BlackBox.Types
 
 import Control.DeepSeq
@@ -33,7 +34,16 @@ genVerilog = doHDL (initBackend WORD_SIZE_IN_BITS HDLSYN :: VerilogState)
 
 genYices :: String
            -> IO ()
-genYices = doHDL (initBackend WORD_SIZE_IN_BITS HDLSYN :: YicesState)
+genYices src = do
+    startTime <- Clock.getCurrentTime
+    pd      <- primDir b
+    (bindingsMap,tcm,tupTcm,topEnt,testInpM,expOutM,primMap) <- generateBindings True pd ["."] (hdlKind b) src Nothing
+    prepTime <- startTime `deepseq` bindingsMap `deepseq` tcm `deepseq` Clock.getCurrentTime
+    let prepStartDiff = Clock.diffUTCTime prepTime startTime
+    putStrLn $ "Loading dependencies took " ++ show prepStartDiff
+    generateYices bindingsMap (Just b) primMap tcm tupTcm (ghcTypeToHWType WORD_SIZE_IN_BITS True) reduceConstant topEnt testInpM expOutM
+      (CLaSHOpts 20 20 15 DebugFinal True WORD_SIZE_IN_BITS Nothing HDLSYN True True False ["."] True) (startTime,prepTime)    
+  where b = initBackend WORD_SIZE_IN_BITS HDLSYN :: YicesState
 
 doHDL :: Backend s
        => s

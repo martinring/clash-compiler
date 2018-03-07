@@ -113,5 +113,6 @@ Library
                       wl-pprint-text          >= 1.1.0.0  && < 1.2
 
   Exposed-modules:    CLaSH.Backend.Yices
+                      CLaSH.Backend.Yices.Driver
 
   other-modules:      Paths_clash_bv
