@@ -96,26 +96,7 @@ end
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Vector.map"
     , "type"      : "map :: (a -> b) -> Vec n a -> Vec n b"
-    , "templateD" :
-"// map begin
-wire ~SIGD[~GENSYM[vec][0]][1];
-assign ~SYM[0] = ~ARG[1];
-
-genvar ~GENSYM[i][1];
-~GENERATE
-for (~SYM[1]=0; ~SYM[1] < ~LENGTH[~TYPO]; ~SYM[1] = ~SYM[1] + 1) begin : ~GENSYM[map][2]
-  wire ~TYPEL[~TYP[1]] ~GENSYM[map_in][3];
-  wire ~TYPEL[~TYPO] ~GENSYM[map_out][4];
-
-  assign ~SYM[3] = ~SYM[0][~SYM[1]*~SIZE[~TYPEL[~TYP[1]]]+:~SIZE[~TYPEL[~TYP[1]]]];
-  ~INST 0
-    ~OUTPUT <= ~SYM[4]~ ~TYPEL[~TYPO]~
-    ~INPUT  <= ~SYM[3]~ ~TYPEL[~TYP[1]]~
-  ~INST
-  assign ~RESULT[~SYM[1]*~SIZE[~TYPEL[~TYPO]]+:~SIZE[~TYPEL[~TYPO]]] = ~SYM[4];
-end
-~ENDGENERATE
-// map end"
+    , "templateD" : " "
     }
   }
 , { "BlackBox" :
@@ -198,67 +179,48 @@ assign ~RESULT = ~ARG[1];
     { "name"      : "CLaSH.Sized.Vector.fold"
     , "type"      : "fold :: (a -> a -> a) -> Vec (n+1) a -> a"
     , "comment"   : "THIS ONLY WORKS FOR POWER OF TWO LENGTH VECTORS"
-    , "templateD" :
-"// fold begin
-// put flat input array into the first half of the intermediate array
-wire ~TYPO ~GENSYM[intermediate][0] [0:(2*~LENGTH[~TYP[1]])-2];
-wire ~TYP[1] ~GENSYM[vecflat][1];
-assign ~SYM[1] = ~ARG[1];
-genvar ~GENSYM[i][2];
-~GENERATE
-for (~SYM[2]=0; ~SYM[2] < ~LENGTH[~TYP[1]]; ~SYM[2]=~SYM[2]+1) begin : ~GENSYM[mk_array][3]
-  assign ~SYM[0][(~LENGTH[~TYP[1]]-1)-~SYM[2]] = ~SYM[1][~SYM[2]*~SIZE[~TYPO]+:~SIZE[~TYPO]];
-end
-~ENDGENERATE
-
-// calculate the depth of the tree
-function integer ~GENSYM[log2][14];
-  input integer value;
-  begin
-    value = value-1;
-    for (~SYM[14]=0; value>0; ~SYM[14]=~SYM[14]+1)
-      value = value>>1;
-  end
-endfunction
-
-localparam ~GENSYM[levels][4] = ~SYM[14](~LENGTH[~TYP[1]]);
-
-// given a level and a depth, calculate the corresponding index into the
-// intermediate array
-function integer ~GENSYM[depth2Index][13];
-  input integer levels;
-  input integer depth;
-
-  ~SYM[13] = (2 ** levels) - (2 ** depth);
-endfunction
-
-// Create the tree of instantiated components
-genvar ~GENSYM[d][5];
-genvar ~GENSYM[i][6];
-~GENERATE
-if (~SYM[4] != 0) begin : ~GENSYM[make_tree][7]
-  for (~SYM[5] = (~SYM[4] - 1); ~SYM[5] >= 0; ~SYM[5]=~SYM[5]-1) begin : ~GENSYM[tree_depth][11]
-    for (~SYM[6] = 0; ~SYM[6] < (2**~SYM[5]); ~SYM[6] = ~SYM[6]+1) begin : ~GENSYM[tree_depth_loop][12]
-      wire ~TYPO ~GENSYM[fold_in1][8];
-      wire ~TYPO ~GENSYM[fold_in2][9];
-      wire ~TYPO ~GENSYM[fold_out][10];
-
-      assign ~SYM[8] = ~SYM[0][~SYM[13](~SYM[4]+1,~SYM[5]+2)+(2*~SYM[6])];
-      assign ~SYM[9] = ~SYM[0][~SYM[13](~SYM[4]+1,~SYM[5]+2)+(2*~SYM[6])+1];
-      ~INST 0
-        ~OUTPUT <= ~SYM[10]~ ~TYPO~
-        ~INPUT  <= ~SYM[8]~ ~TYPO~
-        ~INPUT  <= ~SYM[9]~ ~TYPO~
-      ~INST
-      assign ~SYM[0][~SYM[13](~SYM[4]+1,~SYM[5]+1)+~SYM[6]] = ~SYM[10];
-    end
-  end
-end
-~ENDGENERATE
-
-// The last element of the intermediate array holds the result
-assign ~RESULT = ~SYM[0][(2*~LENGTH[~TYP[1]])-2];
-// fold end"
+    , "templateD" : "-- fold begin
+    ~GENSYM[fold][0] : block
+      -- given a level and a depth, calculate the corresponding index into the
+      -- intermediate array
+      function ~GENSYM[depth2Index][1] (levels,depth : in natural) return natural is
+      begin
+        return (2 ** levels - 2 ** depth);
+      end function;
+    ~IF ~VIVADO ~THEN
+      type ~GENSYM[fold_res_type][2] is array(natural range <>) of ~TYPO;
+      signal ~GENSYM[intermediate][3] : ~SYM[2](0 to (2*~LENGTH[~TYP[1]])-2);~IF ~ISLIT[1] ~THEN
+      signal ~GENSYM[vec][4] : ~TYP[1];~ELSE ~FI ~ELSE
+      signal ~SYM[3] : ~TYPM[1](0 to (2*~LENGTH[~TYP[1]])-2);~FI
+      constant ~GENSYM[levels][5] : natural := natural (ceil (log2 (real (~LENGTH[~TYP[1]]))));
+    begin
+      -- put input array into the first half of the intermediate array~IF ~VIVADO ~THEN~IF ~ISLIT[1] ~THEN
+      ~SYM[4] <= ~ARG[1];
+      ~GENSYM[fill_tree][6] : for ~GENSYM[d][7] in ~SYM[4]'range generate
+        ~SYM[3](~SYM[7]) <= ~FROMBV[~SYM[3](~SYM[7])][~TYPO];
+      end generate;~ELSE
+      ~SYM[6] : for ~SYM[7] in ~ARG[1]'range generate
+        ~SYM[3](~SYM[7]) <= ~FROMBV[~ARG[1](~SYM[7])][~TYPO];
+      end generate;~FI~ELSE
+      ~SYM[3](0 to ~LENGTH[~TYP[1]]-1) <= ~ARG[1];~FI
+    
+      -- Create the tree of instantiated components
+      ~GENSYM[make_tree][8] : if ~SYM[5] /= 0 generate
+        ~GENSYM[tree_depth][9] : for ~GENSYM[d][10] in ~SYM[5]-1 downto 0 generate
+          ~GENSYM[tree_depth_loop][11] : for ~GENSYM[i][12] in 0 to (natural(2**~SYM[10]) - 1) generate
+            ~INST 0
+              ~OUTPUT <= ~SYM[3](~SYM[1](~SYM[5]+1,~SYM[10]+1)+~SYM[12])~ ~TYPO~
+              ~INPUT  <= ~SYM[3](~SYM[1](~SYM[5]+1,~SYM[10]+2)+(2*~SYM[12]))~ ~TYPO~
+              ~INPUT  <= ~SYM[3](~SYM[1](~SYM[5]+1,~SYM[10]+2)+(2*~SYM[12])+1)~ ~TYPO~
+            ~INST
+          end generate;
+        end generate;
+      end generate;
+    
+      -- The last element of the intermediate array holds the result
+      ~RESULT <= ~SYM[3]((2*~LENGTH[~TYP[1]])-2);
+    end block;
+    -- fold end"
     }
   }
 , { "BlackBox" :

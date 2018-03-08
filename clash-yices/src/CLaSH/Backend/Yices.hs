@@ -20,7 +20,7 @@ import           Control.Monad
 import           Control.Monad.State                  (State)
 
 import           Data.List                            (intersect,partition)
-import           Data.Maybe                           (catMaybes,isNothing)
+import           Data.Maybe                           (catMaybes,isNothing,fromMaybe,fromJust)
 import           Data.HashSet                         (HashSet)
 import qualified Data.HashSet                         as HashSet
 import qualified Data.IntMap                          as IntMap
@@ -34,7 +34,7 @@ import           CLaSH.Netlist.BlackBox.Types         (HdlSyn (..))
 import           CLaSH.Netlist.BlackBox.Util          (renderBlackBox,extractLiterals)
 import           CLaSH.Netlist.Id                     (mkBasicId')
 import           CLaSH.Netlist.Types                  hiding (_intWidth, intWidth)
-import           CLaSH.Netlist.Util
+import           CLaSH.Netlist.Util                   (typeSize)
 
 #ifdef CABAL
 import qualified Paths_clash_yices
@@ -50,9 +50,10 @@ data YicesState =
     , _srcSpan           :: SrcSpan
     , _intWidth          :: Int -- ^ Int/Word/Integer bit-width
     , _currentModule     :: ModName
-    , _assignments :: [(Identifier,Doc)]
+    , _assignments       :: [(Identifier,Doc)]
     , _otherModules      :: [(Text,Component)]
     , _prefix            :: Text
+    , _tempVarI          :: Int
     }
 
 makeLenses ''YicesState
@@ -62,7 +63,7 @@ type YicesM a = State YicesState a
 instance Backend YicesState where
   -- | Initial state for state monad
   initBackend :: Int -> HdlSyn -> YicesState
-  initBackend iw _ = YicesState HashSet.empty [] noSrcSpan iw "" [] [] ""
+  initBackend iw _ = YicesState HashSet.empty [] noSrcSpan iw "" [] [] "" 0
   -- | What HDL is the backend generating
   hdlKind :: YicesState -> HDL
   hdlKind = const Yices
@@ -154,6 +155,12 @@ reservedWords = [
   "show-implicant", "show-model", "show-param", "show-params", "show-stats",
   "true", "tuple", "tuple-update", "update", "xor"]
 
+tempVar :: YicesM Identifier
+tempVar = do
+  x <- use tempVarI   
+  tempVarI .= x + 1
+  return $ Text.append ("_temp_") (Text.pack (show x))
+
 filterReserved :: Identifier -> Identifier
 filterReserved s = if s `elem` reservedWords
   then s `Text.append` "_r"
@@ -200,7 +207,7 @@ yicesTypeName (Vector sz ty) = "Vector" <> brackets (int sz) <> angles (yicesTyp
 yicesTypeName (RTree sz ty) = "RTree" <> brackets (int sz) <> angles (yicesTypeName ty)
 yicesTypeName (Sum name _) = text name
 yicesTypeName (Product name tys)
-  | Text.isPrefixOf "GHC.Tuple" name = "Tuple" <> angles (hcat (punctuate comma (mapM yicesTypeName tys)))
+  | Text.isPrefixOf "GHC.Tuple" name = angles (hcat (punctuate comma (mapM yicesTypeName tys)))
   | otherwise = text name
 yicesTypeName (SP name cs) = text name
 yicesTypeName (Clock name _) = "Clock_" <> text name
@@ -226,9 +233,7 @@ yicesTypesPackage :: String -> [HWType] -> YicesM [(String, Doc)]
 yicesTypesPackage name tys = do
     x <- vsep (mapM defineType sortedTypes) <$>
          comment "constructors" <$>
-         vsep (mapM constructors sortedTypes) <$>
-         comment "selectors" <$>
-         vsep (mapM selector sortedTypes)
+         vsep (mapM constructors sortedTypes)
     return [(name ++ "_types",x)]
   where
     sortedTypes = sortTypes tys
@@ -243,27 +248,13 @@ yicesTypesPackage name tys = do
       vsep $ forM (zip [0..] cs) $ \(i,c) ->
         apply2 "define" (yicesSig c s) (apply2 "mk-bv" (int (typeSize s)) (int i))
     constructors _ = empty
-    selector p@(Product nm tys) = do
-      let sizes = scanl (\s t -> s + typeSize t) 0 tys
-      vsep $ forM (zip3 [0..] tys sizes) $ \(i,ty,os) -> do
-        n <- fmap (Text.pack . show) $ yicesTypeName p
-        parens (
-          ("define" <+> align (
-            text (vectorIndex n i) <+> dcolon </>
-            apply2 "->" (yicesType p) (yicesType ty))) <$>
-          indent 2 (apply2 "lambda"
-              (parens $ yicesSig "x" p) (
-                applyN "bv-extract" $ sequence [int (os + typeSize ty - 1),int os, "x"]
-              ))
-          )
-    selector _ = empty
     defineType ty = apply2 "define-type" (yicesTypeName ty) (yicesTypeDef ty)
 
 compAssignments :: Component -> [Doc] -> Doc -> [(Identifier,Doc)]
-compAssignments c i o = (out,o) : zip ins i
+compAssignments c i o = (out,o) : zip ins i   
   where ins = map fst (inputs c)
         [out] = map fst (outputs c)
-
+  
 withAssignments :: [(Identifier,Doc)] -> YicesM a -> YicesM a
 withAssignments as b = do
   p <- use assignments
@@ -292,6 +283,15 @@ prefixed name = do
 yicesSig :: Text -> HWType -> YicesM Doc
 yicesSig name ty = prefixed name <+> dcolon <+> yicesType ty
 
+getItem :: HWType -> Int -> YicesM Doc -> YicesM Doc 
+getItem (Vector n ty) k u = bvExtract i j u
+  where i = (k + 1) * typeSize ty - 1
+        j = k * typeSize ty
+getItem (Product _ tys) k u = bvExtract i j u
+  where j = sum (map typeSize (take k tys))
+        i = j + typeSize (tys !! k) - 1
+--getItem (Product _ tys) i e = bvExtract 
+
 yicesExpr :: Expr -> YicesM Doc
 yicesExpr (Literal Nothing (BoolLit b)) = text $ if b then "True" else "False"
 yicesExpr (Literal (Just (ty,sz)) lit) = yicesLiteral ty lit
@@ -301,9 +301,8 @@ yicesExpr (DataCon t VecAppend [h,tl]) = applyN "bv-concat" $ mapM yicesExpr (h:
         elems other = [other]
 yicesExpr (DataCon t mod exprs) = applyN "bv-concat" $ mapM yicesExpr exprs
 yicesExpr (Identifier i Nothing) = prefixed i
-yicesExpr (Identifier i (Just (Indexed (p@(Product _ tys),x,n)))) = do
-  name <- yicesTypeName p
-  apply (vectorIndex (Text.pack (show name)) n) (prefixed i)
+yicesExpr (Identifier i (Just (Indexed (ty,_,n)))) =
+  getItem ty n $ prefixed i
 yicesExpr (Identifier i (Just (DC _))) = prefixed i
 yicesExpr (Identifier i mod) = prefixed i <+> text (Text.pack (show mod))
 yicesExpr (BlackBoxE pNm _ _ _ _ bbCtx _)
@@ -317,7 +316,9 @@ yicesExpr (BlackBoxE pNm _ _ _ _ bbCtx _)
   , os <- typeSize oty
   = if ts > os
     then applyN "bv-extract" (sequence [int (os - 1), "0",yicesExpr e])
-    else apply2 "bv-zero-extend" (yicesExpr e) (int (os - 1))
+    else if ts < os 
+         then apply2 "bv-zero-extend" (yicesExpr e) (int (os - ts))
+         else yicesExpr e
   | pNm == "CLaSH.Sized.Vector.init"
   , [(Left e,ty,_)] <- bbInputs bbCtx
   , (_,oty) <- bbResult bbCtx
@@ -374,11 +375,92 @@ yicesInst (CondAssignment i t e t2 cases) = do
       l <- apply2 "=" (yicesExpr e) (yicesLiteral t2 lit)
       r <- yicesExpr e2
       applyN "ite" (return [l,r,el])
-yicesInst (BlackBoxD nm _ _ _ _ ctx)
-  | nm == "CLaSH.Sized.Vector.zipWith" = fmap Just $ do
-      let (n,ni,as) = case (bbFunctions ctx) IntMap.! 0 of
-            (Right (InstDecl n ni as),_) -> (n,ni,as)
-            other -> (Text.pack (show other),Text.pack (show other),[])
+yicesInst nested@(BlackBoxD nm _ _ _ _ ctx) = fmap Just $ 
+    comment ("begin" <+> nm') <$> body <$> comment ("end" <+> nm')        
+  where
+    body = case nm of
+      "CLaSH.Sized.Vector.zipWith" -> do
+        vsep $ forM [1 .. len 1] $ \i -> do
+          px <- mkpx "zipWith" i
+          a <- getItem (typ 1) (i-1) (yicesExpr (arg 1))
+          b <- getItem (typ 2) (i-1) (yicesExpr (arg 2))
+          o <- getItem (typo) (i-1) (yicesExpr out)
+          withPrefix px $ (fun 0) [a,b] o
+      "CLaSH.Sized.Vector.map" -> do
+        vsep $ forM [1 .. len 1] $ \i -> do
+          px <- mkpx "map" i
+          a <- getItem (typ 1) (i - 1) (yicesExpr (arg 1))
+          o <- getItem (typo) (i - 1) (yicesExpr out)
+          withPrefix px $ (fun 0) [a] o
+      "CLaSH.Sized.Vector.fold" -> do
+        let pairs [] = []
+            pairs [x] = [Left x]
+            pairs (x:y:xs) = (Right (x,y)) : pairs xs
+        let layer :: [Doc] -> YicesM [(Doc,Doc)]
+            layer inputs = forM (pairs inputs) $ \case 
+              Left x -> do
+                f <- empty
+                return (f,x)
+              Right (x,y) -> do
+                o <- tempVar                
+                res <- text o
+                f <- (fmap fromJust (definition (NetDecl o typo))) <$> 
+                     (withPrefix o $ (fun 0) [x,y] (res))
+                return (f,res)
+        let reduce :: [Doc] -> YicesM (Doc,Doc)
+            reduce inputs = do
+              res <- layer inputs
+              case res of
+                [(body,x)] -> return (body,x)
+                other -> do 
+                  doc <- vsep (return (map fst other))
+                  (f,r) <- reduce (map snd other)
+                  f' <- (return doc) <$> (return f)
+                  return (f',r)
+        top <- forM [1 .. len 1] $ \i -> do
+          getItem (typ 1) (i - 1) (yicesExpr (arg 1))
+        (body,x) <- reduce top
+        (return body) <$> apply "assert" (apply2 "=" (yicesExpr out) (return x))
+      _ ->
+        text (Text.fromStrict nm) <$>
+          indent 2 (text $ Text.pack (show ctx))
+    nm' = text (Text.fromStrict nm)
+    replaceArg temp subst = let (prefix,suffix') = Text.breakOn "~ARG[" temp
+                                (_,suffix'') = Text.breakOn "]" suffix'
+                                suffix = if (Text.length suffix'' > 0) then Text.tail suffix'' else ""
+                            in  Text.append prefix (Text.append subst suffix)
+    fun n i o = case (bbFunctions ctx) IntMap.! n of 
+      (Right (InstDecl n ni _), _) -> do
+        mods <- use otherModules
+        case lookup n mods of
+          Just c -> do
+            let as = compAssignments c i o
+            comment ("begin" <+> text ni) <$>            
+              withAssignments as (genYicesBody c) <$>
+              comment ("end" <+> text ni)
+          Nothing ->
+            comment $ "could not inst" <+> text ni
+      (Right (Assignment "~RESULT" (Identifier bb Nothing)),_) ->        
+        apply "assert" (apply2 "=" (return o) (text $ foldl replaceArg bb (map (Text.pack . show) i)))
+      (other,ctx') ->
+        "could not inst" <$>
+        text (Text.pack (show other)) <$>
+        text (Text.pack (show ctx)) <$>
+        text (Text.pack (show nested)) <$>        
+        text (Text.pack (show ctx'))
+    len n = case typ n of Vector n _ -> n
+    typ n = case (bbInputs ctx) !! n of (_,t,_) -> t
+    out = sync (fst (bbResult ctx))
+    typo = snd (bbResult ctx)
+    mkpx n i = ap mkBasicId (return (Text.append n (Text.append "_" (Text.pack (show i)))))
+    arg n = case (bbInputs ctx) !! n of (e,_,_) -> sync e
+    sync (Left e) = e
+    sync (Right (e,_)) = e
+
+  {-| nm == "CLaSH.Sized.Vector.zipWith" = fmap Just $ do
+      let decl = case (bbFunctions ctx) IntMap.! 0 of
+            (Right decl,_) -> decl
+            other -> error "WHAT?"
       let (ae,Vector l at,_) = (bbInputs ctx) !! 1
       let (be,Vector _ bt,_) = (bbInputs ctx) !! 2
       let (out,Vector _ ot) = bbResult ctx
@@ -388,26 +470,18 @@ yicesInst (BlackBoxD nm _ _ _ _ ctx)
       a <- yicesExpr ae'
       b <- yicesExpr be'
       o <- yicesExpr out'
-      mods <- use otherModules
-      case lookup n mods of
-        Just c ->
-          comment "begin zipWith" <$>
-          ( vsep $ forM [1..l] $ \i -> do
-              let px = (Text.append ni (Text.append "_" (Text.pack (show i))))
-              a' <- (return a) <> (brackets (int (i-1)))
-              b' <- (return b) <> (brackets (int (i-1)))
-              o' <- (return o) <> (brackets (int (i-1)))
-              let as = compAssignments c [a',b'] o'
-              comment ("begin" <+> text ni) <$>
-                withAssignments as (withPrefix px (genYicesBody c)) <$>
-                comment ("end" <+> text ni)
-          ) <$>
-          comment "end zipWith"
-        Nothing -> comment $ "could not inst" <+> text ni
-  | otherwise =
-      fmap Just $
-        text (Text.fromStrict nm) <$>
-          indent 2 (text $ Text.pack (show ctx))
+      comment "begin zipWith" <$>
+      ( vsep $ forM [1..l] $ \i -> do
+          let px = (Text.append "zipWith_" (Text.pack (show i)))
+          a' <- (return a) <> (brackets (int (i-1)))
+          b' <- (return b) <> (brackets (int (i-1)))
+          o' <- (return o) <> (brackets (int (i-1)))
+          as <- compAssignments c [a',b'] o'
+          withAssignments as (withPrefix px (genYicesBody c)) <$>
+            comment ("end" <+> text ni)
+      ) <$>
+      comment "end zipWith" -}
+     
 yicesInst (InstDecl n ni as) = fmap Just $ do
   mods <- use otherModules
   case lookup n mods of
@@ -439,12 +513,17 @@ vectorIndex :: Text -> Int -> Text
 vectorIndex n i = Text.append n (Text.append "[" (Text.append (Text.pack $ show i) "]"))
 
 definition :: Declaration -> YicesM (Maybe Doc)
-definition (NetDecl name (Vector n ty)) = fmap Just $
-  (apply "define" $ yicesSig name (Vector n ty)) <$>
-  vcat (forM [0..n-1] $ \i -> (apply "define" (yicesSig (vectorIndex name i) ty))) -- <$>
-                              --(apply "assert" (apply2 "=" (text $ vectorIndex name i) (apply2 "select" (text name) (int (i+1))))))
 definition (NetDecl name ty) = fmap Just $ apply "define" $ yicesSig name ty
 definition _ = return Nothing
+
+---
+
+define :: Identifier -> HWType -> Maybe Expr -> YicesM Doc
+define n ty Nothing = apply "define" $ yicesSig n ty
+define n ty (Just e) = apply2 "define" (yicesSig n ty) (yicesExpr e)
+
+bvExtract :: Int -> Int -> YicesM Doc -> YicesM Doc
+bvExtract i j u = applyN "bv-extract" (sequence [int i, int j, u])
 
 ---
 
