@@ -96,7 +96,48 @@ end
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Vector.map"
     , "type"      : "map :: (a -> b) -> Vec n a -> Vec n b"
-    , "templateD" : " "
+    , "templateD" : 
+    "-- map begin~IF ~ISVAR[1] ~THEN
+~GENSYM[map][0] : for ~GENSYM[i][1] in ~RESULT'range generate~IF ~VIVADO ~THEN
+  signal ~GENSYM[map_in][2] : ~TYPEL[~TYP[1]];
+  signal ~GENSYM[map_out][3] : ~TYPEL[~TYPO];
+begin
+  ~SYM[2] <= ~FROMBV[~ARG[1](~SYM[1])][~TYPEL[~TYP[1]]];
+  ~INST 0
+    ~OUTPUT <= ~SYM[3]~ ~TYPEL[~TYPO]~
+    ~INPUT  <= ~SYM[2]~ ~TYPEL[~TYP[1]]~
+  ~INST
+  ~RESULT(~SYM[1]) <= ~TOBV[~SYM[3]][~TYPEL[~TYPO]];
+end generate;~ELSE
+begin
+  ~INST 0
+    ~OUTPUT <= ~RESULT(~SYM[1])~ ~TYPEL[~TYPO]~
+    ~INPUT  <= ~ARG[1](~SYM[1])~ ~TYPEL[~TYP[1]]~
+  ~INST
+end generate;~FI~ELSE
+~SYM[0] : block
+  signal ~GENSYM[vec][4] : ~TYP[1];
+begin
+  ~SYM[4] <= ~ARG[1];
+  ~GENSYM[map][5] : for ~SYM[1] in ~RESULT'range generate~IF ~VIVADO ~THEN
+    signal ~SYM[2] : ~TYPEL[~TYP[1]];
+    signal ~SYM[3] : ~TYPEL[~TYPO];
+  begin
+    ~SYM[2] <= ~FROMBV[~SYM[4](~SYM[1])][~TYPEL[~TYP[1]]];
+    ~INST 0
+      ~OUTPUT <= ~SYM[3]~ ~TYPEL[~TYPO]~
+      ~INPUT  <= ~SYM[2]~ ~TYPEL[~TYP[1]]~
+    ~INST
+    ~RESULT(~SYM[1]) <= ~TOBV[~SYM[3]][~TYPEL[~TYPO]];
+  end generate;~ELSE
+  begin
+    ~INST 0
+      ~OUTPUT <= ~RESULT(~SYM[1])~ ~TYPEL[~TYPO]~
+      ~INPUT  <= ~SYM[4](~SYM[1])~ ~TYPEL[~TYP[1]]~
+    ~INST
+  end generate;~FI
+end block;~FI
+-- map end"
     }
   }
 , { "BlackBox" :

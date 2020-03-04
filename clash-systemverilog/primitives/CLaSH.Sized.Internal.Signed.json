@@ -69,7 +69,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Signed.+#"
     , "type"      : "(+#) :: KnownNat n => Signed n -> Signed n -> Signed n"
-    , "templateE" : "~ARG[1] + ~ARG[2]"
+    , "templateE" : "(bv-add ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
@@ -105,7 +105,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Signed.plus#"
     , "type"      : "plus# :: Signed m -> Signed n -> Signed (1 + Max m n)"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :

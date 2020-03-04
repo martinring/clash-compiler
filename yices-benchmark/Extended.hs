@@ -2,35 +2,57 @@ module Extended where
 
 import CLaSH.Prelude
 
-type Configuration = (Unsigned 16, Unsigned 16, Unsigned 16, Vec 16 (Vec 16 (Unsigned 16)))
+data LightConfiguration = LightConfiguration {
+  e_lo :: Unsigned 32,
+  e_hi :: Unsigned 32,
+  delay :: Unsigned 32,
+  weights :: Vec 32 (Unsigned 16)
+} deriving Show
 
-configurationT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
-configurationT oldConfig (enable,config) =
+type Configuration = Vec 32 LightConfiguration    
+
+configurationControllerT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
+configurationControllerT oldConfig (enable,config) =
   if enable then (config,config) else (oldConfig,oldConfig)
 
-configuration :: Signal (Bool, Configuration) -> Signal Configuration
-configuration = mealy configurationT (63,191,127,replicate SNat (replicate SNat 0))
+initialConfiguration :: Configuration
+initialConfiguration = replicate SNat (LightConfiguration 43 191 127 (replicate SNat 0))
 
-type ControllerState = Vec 16 (Bool, Unsigned 16)
+configurationController :: Signal (Bool, Configuration) -> Signal Configuration
+configurationController = mealy configurationControllerT initialConfiguration
 
-controllerT :: ControllerState -> (Configuration, Vec 16 (Unsigned 16)) -> (ControllerState, Vec 16 Bool)
-controllerT state ((l_low,l_high,delay,lweights),sensors) = (state',map fst state') where
-  state' = zipWith controllerT' state lweights
-  controllerT' (switchState, cnt) weights
-    | e > l_high               = (True,cntn)
-    | e < l_low && cnt > delay = (False,cntn)
-    | otherwise                = (switchState,cntn)
-      where cntn    = if switchState then cnt + 1 else 0
-            wsum    = sum weights
-            esum    = sum $ zipWith (*) sensors weights
-            e       = resize $ esum `div` wsum
+data LightControllerState = LightControllerState {
+  switchState :: Bool,
+  cnt :: Unsigned 32
+} deriving Show
 
-controller :: Signal (Configuration, Vec 16 (Unsigned 16)) -> Signal (Vec 16 Bool)
-controller = mealy controllerT $ replicate SNat (False,0)
+type ControllerState = Vec 32 LightControllerState
 
-configuredController :: Signal (Bool, Configuration, Vec 16 (Unsigned 16)) -> Signal (Vec 16 Bool)
-configuredController input = controller (bundle (cfgOut,sensors))
+data ControllerInput = ControllerInput {
+  config :: Configuration,
+  es :: Vec 32 (Unsigned 16)
+}
+
+controllerT :: ControllerState -> ControllerInput -> (ControllerState, Vec 32 Bool)
+controllerT state (ControllerInput config es) = (state',map switchState state') where
+  state' = zipWith controllerT' state config
+  controllerT' (LightControllerState switchState cnt) (LightConfiguration e_lo e_hi delay weights)
+    | e < e_lo                 = LightControllerState True cntn
+    | e > e_hi && cnt >= delay = LightControllerState False cntn
+    | otherwise                = LightControllerState switchState cntn
+      where cntn    = if e > e_lo then if cnt < delay then cnt + 1 else cnt else 0    
+            wsum :: Unsigned 64
+            wsum    = sum $ map resize $ weights
+            esum :: Unsigned 64
+            esum    = sum $ zipWith (\a b -> resize a * resize b) es weights
+            e       = if wsum == 0 then 0 else resize (esum `div` wsum)
+
+controller :: Signal ControllerInput -> Signal (Vec 32 Bool)
+controller = mealy controllerT $ replicate SNat (LightControllerState False 0)
+
+configuredController :: Signal (Bool, Configuration, Vec 32 (Unsigned 16)) -> Signal (Vec 32 Bool)
+configuredController input = controller (fmap (uncurry ControllerInput) $ bundle (cfgOut,sensors))
   where (enable,config,sensors) = unbundle input
-        cfgOut = configuration (bundle (enable,config))
+        cfgOut = configurationController (bundle (enable,config))
 
 topEntity = configuredController

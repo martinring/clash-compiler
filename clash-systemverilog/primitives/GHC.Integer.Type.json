@@ -13,7 +13,7 @@
 , { "BlackBox" :
     { "name"      : "GHC.Integer.Type.plusInteger"
     , "type"      : "plusInteger :: Integer -> Integer -> Integer"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :

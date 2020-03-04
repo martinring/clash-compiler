@@ -43,7 +43,7 @@
 , { "BlackBox" :
     { "name"      : "GHC.Classes.||"
     , "type"      : "(::) :: Bool -> Bool -> Bool"
-    , "templateE" : "~ARG[0] | ~ARG[1]"
+    , "templateE" : "(bv-or ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :

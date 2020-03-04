@@ -172,7 +172,7 @@ assign ~RESULT = 1'b0;
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.neq#"
     , "type"      : "neq# :: BitVector n -> BitVector n -> Bool"
-    , "templateE" : "~ARG[0] != ~ARG[1]"
+    , "templateE" : "(/= ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -214,7 +214,7 @@ assign ~RESULT = 1'b0;
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.+#"
     , "type"      : "(+#) :: KnownNat n => BitVector n -> BitVector n -> BitVector n"
-    , "templateE" : "~ARG[1] + ~ARG[2]"
+    , "templateE" : "(bv-add ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
@@ -244,7 +244,7 @@ assign ~RESULT = 1'b0;
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.plus#"
     , "type"      : "plus# :: BitVector m -> BitVector n -> BitVector (Max m n + 1)"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -280,19 +280,19 @@ assign ~RESULT = 1'b0;
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.and#"
     , "type"      : "and# :: BitVector n -> BitVector n -> BitVector n"
-    , "templateE" : "~ARG[0] & ~ARG[1]"
+    , "templateE" : "(bv-and ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.or#"
     , "type"      : "or# :: BitVector n -> BitVector n -> BitVector n"
-    , "templateE" : "~ARG[0] | ~ARG[1]"
+    , "templateE" : "(bv-or ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.BitVector.xor#"
     , "type"      : "xor# :: BitVector n -> BitVector n -> BitVector n"
-    , "templateE" : "~ARG[0] ^ ~ARG[1]"
+    , "templateE" : "(bv-xor ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :

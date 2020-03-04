@@ -2,32 +2,48 @@ module Average where
 
 import CLaSH.Prelude
 
-type Configuration = (Unsigned 16, Unsigned 16, Unsigned 16, Vec 16 Bool)
+data Configuration = Configuration {
+  e_lo :: Unsigned 16,
+  e_hi :: Unsigned 16,
+  delay :: Unsigned 32,
+  active :: Vec 512 Bool
+} deriving Show
 
-configurationT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
-configurationT oldConfig (enable,config) =
+configurationControllerT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
+configurationControllerT oldConfig (enable,config) =
   if enable then (config,config) else (oldConfig,oldConfig)
 
-configuration :: Signal (Bool, Configuration) -> Signal Configuration
-configuration = mealy configurationT (63,191,127,replicate SNat False)
+initialConfiguration :: Configuration
+initialConfiguration = Configuration 63 191 127 (replicate SNat False)
 
-type ControllerState = (Bool,Unsigned 16)
+configurationController :: Signal (Bool, Configuration) -> Signal Configuration
+configurationController = mealy configurationControllerT initialConfiguration
 
-controllerT :: ControllerState -> (Configuration, Unsigned 24) -> (ControllerState,Bool)
-controllerT (switchState,cnt) ((l_low,l_high,delay,active),sensor)
-  | e > l_high               = ((True,cntn),True)
-  | e < l_low && cnt > delay = ((False,cntn),False)
-  | otherwise                = ((switchState,cntn),switchState)
-    where cntn    = if switchState then cnt + 1 else 0
-          nactive = foldl (\acc b -> if b then acc + 1 else acc) 0 active
-          e       = resize $ sensor `div` nactive
+data ControllerState = ControllerState {
+  switchState :: Bool,
+  cnt :: Unsigned 32
+} deriving Show
 
-controller :: Signal (Configuration, Unsigned 24) -> Signal Bool
-controller = mealy controllerT (False,0)
+data ControllerInput = ControllerInput {
+  configuration :: Configuration,
+  e :: Unsigned 32
+} deriving Show
 
-configuredController :: Signal (Bool, Configuration, Unsigned 24) -> Signal Bool
-configuredController input = controller (bundle (cfgOut,sensor))
+controllerT :: ControllerState -> ControllerInput -> (ControllerState,Bool)
+controllerT (ControllerState switchState cnt) (ControllerInput (Configuration e_lo e_hi delay active) e)
+  | e' < e_lo                 = (ControllerState True cntn,True)
+  | e' > e_hi && cnt >= delay = (ControllerState False cntn,False)
+  | otherwise                 = (ControllerState switchState cntn,switchState)
+    where cntn    = if e' > e_lo then if cnt < delay then cnt + 1 else cnt else 0          
+          nactive = foldl (\acc b -> if b then acc + 1 else acc) (0::Unsigned 32) active
+          e'      = if nactive == 0 then 0 else resize (e `div` nactive)
+
+controller :: Signal ControllerInput -> Signal Bool
+controller = mealy controllerT (ControllerState False 0)
+
+configuredController :: Signal (Bool,Configuration,Unsigned 32) -> Signal Bool
+configuredController input = controller (fmap (uncurry ControllerInput) $ bundle (cfgOut,sensor))
   where (enable,config,sensor) = unbundle input
-        cfgOut = configuration (bundle (enable,config))
+        cfgOut = configurationController (bundle (enable,config))
 
 topEntity = configuredController

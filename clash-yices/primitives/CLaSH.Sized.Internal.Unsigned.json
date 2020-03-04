@@ -25,7 +25,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.neq#"
     , "type"      : "neq# :: Unsigned n -> Unsigned n -> Bool"
-    , "templateE" : "~ARG[0] != ~ARG[1]"
+    , "templateE" : "(bool-to-bv (/= ~ARG[0] ~ARG[1]))"
     }
   }
 , { "BlackBox" :
@@ -97,19 +97,19 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.plus#"
     , "type"      : "plus# :: Unsigned m -> Unsigned n -> Unsigned (1 + Max m n)"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.minus#"
     , "type"      : "minus# :: (KnownNat m, KnownNat n) => Unsigned m -> Unsigned n -> Unsigned (1 + Max m n)"
-    , "templateE" : "~ARG[2] - ~ARG[3]"
+    , "templateE" : "(bv-sub ~ARG[2] ~ARG[3])"
     }
   }
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.times#"
     , "type"      : "times# :: Unsigned m -> Unsigned n -> Unsigned (m + n)"
-    , "templateE" : "~ARG[0] * ~ARG[1]"
+    , "templateE" : "(bv-mul ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -139,7 +139,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.or#"
     , "type"      : "or# :: Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[0] | ~ARG[1]"
+    , "templateE" : "(bv-or ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -191,7 +191,7 @@ assign ~RESULT = ~SYM[0][~LIT[0]-1 : 0];
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.resize#"
     , "type"      : "resize# :: KnownNat m => Unsigned n -> Unsigned m"
-    , "templateE" : "$if(~SIZE[~TYPO] > ~SIZE[~TYP[1]]) (bv-zero-extend ~ARG[1] ~SIZE[~TYPO]) $else (bv-extract $(~SIZE[~TYPO]-1) 0 ~ARG[1]) $endif"
+    , "templateE" : "(bv-zero-extend ~ARG[1] 24)"
     }
   }
 ]

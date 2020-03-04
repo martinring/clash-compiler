@@ -55,7 +55,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Index.+#"
     , "type"      : "(+#) :: KnownNat n => Index n -> Index n -> Index n"
-    , "templateE" : "~ARG[1] + ~ARG[2]"
+    , "templateE" : "(bv-add ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :

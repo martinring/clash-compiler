@@ -187,7 +187,7 @@ assign ~RESULT = (~SYM[1][~SIZE[~TYPO]-1] == ~SYM[2][~SIZE[~TYPO]-1]) ?
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Signed.or#"
     , "type"      : "or# :: KnownNat n => Signed n -> Signed n -> Signed n"
-    , "templateE" : "~ARG[1] | ~ARG[2]"
+    , "templateE" : "(bv-or ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :

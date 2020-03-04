@@ -2,33 +2,51 @@ module WeightedAverage where
 
 import CLaSH.Prelude
 
-type Configuration = (Unsigned 16, Unsigned 16, Unsigned 16, Vec 16 (Unsigned 16))
+data Configuration = Configuration {
+  e_lo :: Unsigned 32,
+  e_hi :: Unsigned 32,
+  delay :: Unsigned 32,
+  weights :: Vec 32 (Unsigned 16)
+} deriving Show
 
-configurationT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
-configurationT oldConfig (enable,config) =
+configurationControllerT :: Configuration -> (Bool, Configuration) -> (Configuration,Configuration)
+configurationControllerT oldConfig (enable,config) =
   if enable then (config,config) else (oldConfig,oldConfig)
 
-configuration :: Signal (Bool, Configuration) -> Signal Configuration
-configuration = mealy configurationT (63,191,127,replicate SNat 0)
+initialConfiguration :: Configuration
+initialConfiguration = Configuration 63 191 127 (replicate SNat 0)
 
-type ControllerState = (Bool,Unsigned 16)
+configurationController :: Signal (Bool, Configuration) -> Signal Configuration
+configurationController = mealy configurationControllerT initialConfiguration
 
-controllerT :: ControllerState -> (Configuration, Vec 16 (Unsigned 16)) -> (ControllerState,Bool)
-controllerT (switchState,cnt) ((l_low,l_high,delay,weights),sensors)
-  | e > l_high               = ((True,cntn),True)
-  | e < l_low && cnt > delay = ((False,cntn),False)
-  | otherwise                     = ((switchState,cntn),switchState)
-    where cntn    = if switchState then cnt + 1 else 0
-          wsum    = sum weights
-          esum    = sum $ zipWith (*) sensors weights
-          e       = resize $ esum `div` wsum
+data ControllerState = ControllerState {
+  switchState :: Bool,
+  cnt :: Unsigned 32
+} deriving Show
 
-controller :: Signal (Configuration, Vec 16 (Unsigned 16)) -> Signal Bool
-controller = mealy controllerT (False,0)
+data ControllerInput = ControllerInput {
+  configuration :: Configuration,
+  es :: Vec 32 (Unsigned 16) 
+} deriving Show
 
-configuredController :: Signal (Bool, Configuration, Vec 16 (Unsigned 16)) -> Signal Bool
-configuredController input = controller (bundle (cfgOut,sensor))
+controllerT :: ControllerState -> ControllerInput -> (ControllerState,Bool)
+controllerT (ControllerState switchState cnt) (ControllerInput (Configuration e_lo e_hi delay weights) es)
+  | e < e_lo                 = (ControllerState True cntn,True)
+  | e > e_hi && cnt >= delay = (ControllerState False cntn,False)
+  | otherwise                = (ControllerState switchState cntn,switchState)
+    where cntn    = if e > e_lo then if cnt < delay then cnt + 1 else cnt else 0    
+          wsum :: Unsigned 64
+          wsum    = sum $ map resize $ weights
+          esum :: Unsigned 64
+          esum    = sum $ zipWith (\a b -> resize a * resize b) es weights
+          e       = if wsum == 0 then 0 else resize (esum `div` wsum)
+
+controller :: Signal ControllerInput -> Signal Bool
+controller = mealy controllerT (ControllerState False 0)
+
+configuredController :: Signal (Bool, Configuration, Vec 32 (Unsigned 16)) -> Signal Bool
+configuredController input = controller (fmap (uncurry ControllerInput) $ bundle (cfgOut,sensor))
   where (enable,config,sensor) = unbundle input
-        cfgOut = configuration (bundle (enable,config))
+        cfgOut = configurationController (bundle (enable,config))
 
 topEntity = configuredController

@@ -12,7 +12,7 @@ module CLaSH.Backend.Yices (YicesState) where
 
 import           Prelude                              hiding ((<$>))
 
-import           Control.Lens                         hiding (Indexed)
+import           Control.Lens                         hiding (Indexed,Context)
 
 import           Text.PrettyPrint.Leijen.Text.Monadic
 
@@ -26,6 +26,7 @@ import qualified Data.HashSet                         as HashSet
 import qualified Data.IntMap                          as IntMap
 import           Data.Text.Lazy                       (Text)
 import qualified Data.Text.Lazy                       as Text
+import qualified Data.Text                            as SText
 
 import           CLaSH.Annotations.Primitive          (HDL (..))
 import           CLaSH.Backend
@@ -250,10 +251,6 @@ yicesTypesPackage name tys = do
     constructors _ = empty
     defineType ty = apply2 "define-type" (yicesTypeName ty) (yicesTypeDef ty)
 
-compAssignments :: Component -> [Doc] -> Doc -> [(Identifier,Doc)]
-compAssignments c i o = (out,o) : zip ins i   
-  where ins = map fst (inputs c)
-        [out] = map fst (outputs c)
   
 withAssignments :: [(Identifier,Doc)] -> YicesM a -> YicesM a
 withAssignments as b = do
@@ -309,13 +306,13 @@ yicesExpr (BlackBoxE pNm _ _ _ _ bbCtx _)
   | pNm == "CLaSH.Sized.Internal.Unsigned.fromInteger#"
   , [Literal _ (NumLit n), Literal _ i] <- extractLiterals bbCtx
   = yicesLiteral (Unsigned (fromInteger n)) i
-  | pNm == "CLaSH.Sized.Internal.Unsigned.resize#"
+  | pNm == "CLaSH.Sized.Internal.Unsigned.resize#" 
   , [_,(Left e,ty,_)] <- bbInputs bbCtx
   , (_,oty) <- bbResult bbCtx
   , ts <- typeSize ty
   , os <- typeSize oty
   = if ts > os
-    then applyN "bv-extract" (sequence [int (os - 1), "0",yicesExpr e])
+    then applyN "bv-extract" (sequence [int (os - 1), "0", yicesExpr e])
     else if ts < os 
          then apply2 "bv-zero-extend" (yicesExpr e) (int (os - ts))
          else yicesExpr e
@@ -403,7 +400,7 @@ yicesInst nested@(BlackBoxD nm _ _ _ _ ctx) = fmap Just $
                 return (f,x)
               Right (x,y) -> do
                 o <- tempVar                
-                res <- text o
+                res <- prefixed o
                 f <- (fmap fromJust (definition (NetDecl o typo))) <$> 
                      (withPrefix o $ (fun 0) [x,y] (res))
                 return (f,res)
@@ -430,18 +427,24 @@ yicesInst nested@(BlackBoxD nm _ _ _ _ ctx) = fmap Just $
                                 suffix = if (Text.length suffix'' > 0) then Text.tail suffix'' else ""
                             in  Text.append prefix (Text.append subst suffix)
     fun n i o = case (bbFunctions ctx) IntMap.! n of 
-      (Right (InstDecl n ni _), _) -> do
+      (Right (InstDecl n ni _), ctx') -> do
         mods <- use otherModules
         case lookup n mods of
-          Just c -> do
-            let as = compAssignments c i o
-            comment ("begin" <+> text ni) <$>            
+          Just c -> do            
+            pipeThrough <- forM (bbInputs ctx') $ \case
+              (Left e@(Identifier n Nothing), _, _) -> text n
+            let ins = map fst (inputs c)
+            let [out] = map fst (outputs c)
+            let as = (out,o) : zip ins (pipeThrough ++ i)
+            comment ("begin" <+> text ni) <$>
+              --text (Text.pack $ show ctx) <$>
+              vsep (forM as $ \(i,a) -> comment (" " <+> text i <> colon <+> return a)) <$>
               withAssignments as (genYicesBody c) <$>
               comment ("end" <+> text ni)
           Nothing ->
-            comment $ "could not inst" <+> text ni
-      (Right (Assignment "~RESULT" (Identifier bb Nothing)),_) ->        
-        apply "assert" (apply2 "=" (return o) (text $ foldl replaceArg bb (map (Text.pack . show) i)))
+            comment $ "could not inst" <+> text ni      
+      (Right (Assignment "~RESULT" (Identifier bb Nothing)), ctx') ->
+        (apply "assert" (apply2 "=" (return o) (text $ foldl replaceArg bb (map (Text.pack . show) i))))
       (other,ctx') ->
         "could not inst" <$>
         text (Text.pack (show other)) <$>

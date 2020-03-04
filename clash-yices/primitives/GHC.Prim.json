@@ -43,7 +43,7 @@
 , { "BlackBox" :
     { "name"      : "GHC.Prim.+#"
     , "type"      : "(+#) :: Int# -> Int# -> Int#"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -87,13 +87,13 @@ assign ~RESULT = {~SYM[0],~SYM[1]};
 , { "BlackBox" :
     { "name"      : "GHC.Prim.andI#"
     , "type"      : "andI# :: Int# -> Int# -> Int#"
-    , "templateE" : "~ARG[0] & ~ARG[1]"
+    , "templateE" : "(and ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
     { "name"      : "GHC.Prim.orI#"
     , "type"      : "orI# :: Int# -> Int# -> Int#"
-    , "templateE" : "~ARG[0] | ~ARG[1]"
+    , "templateE" : "(or ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -183,7 +183,7 @@ assign ~RESULT = {~SYM[0],~SYM[1]};
 , { "BlackBox" :
     { "name"      : "GHC.Prim.plusWord#"
     , "type"      : "plusWord# :: Word# -> Word# -> Word#"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
@@ -233,7 +233,7 @@ assign ~RESULT = {~SYM[0],~SYM[1]};
 , { "BlackBox" :
     { "name"      : "GHC.Prim.or#"
     , "type"      : "or# :: Word# -> Word# -> Word#"
-    , "templateE" : "~ARG[0] | ~ARG[1]"
+    , "templateE" : "(or ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :

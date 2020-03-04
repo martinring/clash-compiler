@@ -67,7 +67,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.+#"
     , "type"      : "(+#) :: KnownNat n => Unsigned n -> Unsigned n -> Unsigned n"
-    , "templateE" : "~ARG[1] + ~ARG[2]"
+    , "templateE" : "(bv-add ~ARG[1] ~ARG[2])"
     }
   }
 , { "BlackBox" :
@@ -97,7 +97,7 @@
 , { "BlackBox" :
     { "name"      : "CLaSH.Sized.Internal.Unsigned.plus#"
     , "type"      : "plus# :: Unsigned m -> Unsigned n -> Unsigned (1 + Max m n)"
-    , "templateE" : "~ARG[0] + ~ARG[1]"
+    , "templateE" : "(bv-add ~ARG[0] ~ARG[1])"
     }
   }
 , { "BlackBox" :
